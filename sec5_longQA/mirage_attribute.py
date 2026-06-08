@@ -47,12 +47,14 @@ def main():
 
     stop = []
     stop = list(set(stop + ["\n", "Ċ", "ĊĊ", "<0x0A>"])) # In Llama \n is <0x0A>; In OPT \n is Ċ
-    if "llama-3" in data["args"]["model"].lower():
-            stop_token_ids = list(set([tokenizer.convert_tokens_to_ids(stop_token) for stop_token in stop] + [model.config.eos_token_id]))
-    else:
-            stop_token_ids = list(set([tokenizer._convert_token_to_id(stop_token) for stop_token in stop] + [model.config.eos_token_id]))
-    if "llama" in data["args"]["model"].lower() or "zephyr" in data["args"]["model"].lower() or "mistral" in data["args"]["model"].lower():
-        stop_token_ids.remove(tokenizer.unk_token_id)
+    stop_token_ids = [
+        token_id for token_id in [tokenizer.convert_tokens_to_ids(stop_token) for stop_token in stop] + [model.config.eos_token_id]
+        if token_id is not None
+    ]
+    stop_token_ids = list(set(stop_token_ids))
+    if "llama" in data["args"]["model"].lower() or "zephyr" in data["args"]["model"].lower() or "mistral" in data["args"]["model"].lower() or "deepseek" in data["args"]["model"].lower() or "qwen" in data["args"]["model"].lower():
+        if tokenizer.unk_token_id in stop_token_ids:
+            stop_token_ids.remove(tokenizer.unk_token_id)
 
     special_tokens_to_keep = []
 
@@ -60,6 +62,10 @@ def main():
         decoder_input_output_separator = '\n '
         special_tokens_to_keep = ["</s>"]
     elif "llama-2" in data["args"]["model"].lower():
+        decoder_input_output_separator = ' '
+    elif "llama-3" in data["args"]["model"].lower() or "llama3" in data["args"]["model"].lower():
+        decoder_input_output_separator = ' '
+    elif "deepseek" in data["args"]["model"].lower() or "qwen" in data["args"]["model"].lower():
         decoder_input_output_separator = ' '
     elif "mistral" in data["args"]["model"].lower():
         decoder_input_output_separator = ' '

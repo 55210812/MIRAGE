@@ -133,15 +133,16 @@ class LLM:
             stop = [] if stop is None else stop
             stop = list(set(stop + ["\n", "Ċ", "ĊĊ", "<0x0A>"])) # In Llama \n is <0x0A>; In OPT \n is Ċ
             stop_token_ids = list(set([self.tokenizer.convert_tokens_to_ids(stop_token) for stop_token in stop] + [self.model.config.eos_token_id]))
-            if "llama" in args.model.lower() or "zephyr" in args.model.lower() or "mistral" in args.model.lower() or "mamba" in args.model.lower():
-                stop_token_ids.remove(self.tokenizer.unk_token_id)
+            if "llama" in args.model.lower() or "zephyr" in args.model.lower() or "mistral" in args.model.lower() or "mamba" in args.model.lower() or "deepseek" in args.model.lower() or "qwen" in args.model.lower():
+                if self.tokenizer.unk_token_id in stop_token_ids:
+                    stop_token_ids.remove(self.tokenizer.unk_token_id)
             
             if "llama-2" in args.model.lower():
                 stop_token_ids.remove(13)
             
             outputs = self.model.generate(
                 **inputs,
-                do_sample=True, temperature=args.temperature, top_p=args.top_p, 
+                do_sample=args.do_sample, temperature=args.temperature, top_p=args.top_p,
                 max_new_tokens=max_tokens,
                 num_return_sequences=1,
                 eos_token_id=stop_token_ids
@@ -198,6 +199,7 @@ def main():
     # Decoding
     parser.add_argument("--temperature", type=float, default=0.5, help="Temperature for decoding")
     parser.add_argument("--top_p", type=float, default=1.0, help="Nucleus sampling top-p")
+    parser.add_argument("--do_sample", type=bool, default=True, help="Whether to sample during local generation")
     parser.add_argument("--max_new_tokens", type=int, default=300, help="Max number of new tokens to generate in one step")
     parser.add_argument("--max_length", type=int, default=2048, help="Max length the model can take. Should set properly wrt the model to avoid position overflow.")
     parser.add_argument("--num_samples", type=int, default=1, help="Sample multiple answers.")
@@ -247,6 +249,8 @@ def main():
     elif "mamba" in args.model.lower():
         args.max_length = 4096
     elif "llama-3" in args.model.lower() or "llama3" in args.model.lower():
+        args.max_length = 4096
+    elif "deepseek" in args.model.lower() or "qwen" in args.model.lower():
         args.max_length = 4096
 
     logger.info(f"Set the model max length to {args.max_length} (if not correct, check the code)")
@@ -465,7 +469,7 @@ def main():
         if args.azure:
             eval_data["azure_filter_fail"] = llm.azure_filter_fail 
     
-    if not os.path.exists("result/")
+    if not os.path.exists("result/"):
         os.makedirs("result/")
 
     if not args.standard:

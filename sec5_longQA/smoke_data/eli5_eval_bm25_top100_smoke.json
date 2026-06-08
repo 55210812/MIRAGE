@@ -1,0 +1,43 @@
+[
+  {
+    "question": "Why is it bad to eat cookie dough for risk of salmonella but things like Cookie Dough Bites are ok?",
+    "answer": "Any edible \"cookie dough\" products are made without eggs so there is no risk of salmonella since the salmonella bacteria is from the egg.",
+    "docs": [
+      {
+        "title": "How to Treat and Prevent Food Poisoning - MsPrepper",
+        "text": "just a typical gastro upset. Salmonella is most commonly caused by eating undercooked or raw foods like eggs or meat. You know how your mom always warned you not to eat raw cookie dough? This is why. Most people do eat cookie dough and they are fine, but salmonella is a risk. If you do contract salmonella, you could start to feel bad within in a couple of hours after eating contaminated food, and sometimes it could take a day or two. Common symptoms are nausea and vomiting, loose stools (sometimes bloody), flu like symptoms, and stomach cramps. To treat",
+        "url": "http://msprepper.com/medical/treat-prevent-food-poisoning/",
+        "summary": "Eating raw cookie dough can cause salmonella. Symptoms include nausea, vomiting, and stomach cramps. It is not explained why products like Cookie Dough Bites are safe.",
+        "extraction": "Eating raw cookie dough is bad for the risk of salmonella because it is most commonly caused by eating undercooked or raw foods like eggs or meat. However, things like Cookie Dough Bites are okay because they are made with treated flour and pasteurized eggs, which kills any potential bacteria."
+      },
+      {
+        "title": "FDA Issues Warning About Eating Raw Cookie Dough, But Not For Salmonella Risks",
+        "text": "FDA Issues Warning About Eating Raw Cookie Dough, But Not For Salmonella Risks Used to licking the spoon or placating yourself with full-on chunks of raw cookie dough? The Food and Drug Administration issued a warning on Tuesday that strongly advises against continuing the habit. The agency asserted that consuming raw batter of any kind, whether for bread, cookies or pizza, could make a person sick. While you may have been warned in the past against eating raw dough due to the risk of contracting salmonella from raw eggs, the FDA is citing raw flour as the culprit for a",
+        "url": "https://www.mic.com/articles/147485/raw-cookie-dough-fda-warning-not-eggs-but-e-coli-risk",
+        "summary": "The FDA warns against consuming raw batter due to the risk of getting sick, but not for salmonella from raw eggs. The culprit is instead raw flour. Explanation about why Cookie Dough Bites are ok is not provided in the document.",
+        "extraction": "Raw flour is the culprit for a risk of illness from eating raw cookie dough, but products like Cookie Dough Bites are safe to eat because they are made with treated flour and pasteurized eggs."
+      },
+      {
+        "title": "It's Probably OK to Eat Raw Cookie Dough \u2014 As Long As You're Smart About It - The Crux - Very Top Secret Information",
+        "text": "First, when most people think about health risks and cookie dough, they think about raw egg. Eggs can be contaminated with salmonella bacteria, and food safety recommendations encourage people to cook eggs until the white and yolk are firm in order to kill any bacteria. However, anyone making cookies can do things to reduce this risk by using pasteurized egg products. When my kids and I make cookie dough, we never use regular eggs. Instead, we use shell eggs that have been pasteurized to kill any harmful bacteria without actually cooking the egg itself. (A great public health innovation, if",
+        "url": "https://verytopsecret.info/2018/12/17/0fnslqsvsoy/",
+        "summary": "It is bad to eat raw cookie dough due to the risk of salmonella from raw eggs, but using pasteurized egg products can reduce this risk. It is unclear if Cookie Dough Bites are mentioned in the document.",
+        "extraction": "Regular cookie dough may contain raw eggs that can be contaminated with salmonella bacteria, but products like Cookie Dough Bites are okay because they use pasteurized egg products that kill any harmful bacteria without actually cooking the egg itself."
+      },
+      {
+        "title": "How Dangerous Is It to Eat Raw Cookie Dough? | Men's Health",
+        "text": "Can Eating Raw Cookie Dough Really Make You Sick? Scientists reveal the truth about this supposedly dangerous delicacy By Katherine Dempsey There are few things more tempting in life than eyeing a bowl of cookie dough and deciding whether or not to stick your finger in for a scoop. It\u2019s a bit like playing Russian roulette. You could get lucky and enjoy the delicious dough without conseqence, but there\u2019s always the risk of getting serously sick with a food-borne illness. That\u2019s because multiple ingredients within the dough could be contaminated by pathogens such as Salmonella and E. coli, says Soohyoun",
+        "url": "https://www.menshealth.com/health/a19520261/risks-of-eating-raw-cookie-dough/",
+        "summary": "Eating raw cookie dough can make you sick because it could be contaminated with pathogens like Salmonella and E. coli.",
+        "extraction": "Eating raw cookie dough is bad for the risk of salmonella because multiple ingredients within the dough could be contaminated by pathogens such as Salmonella and E. coli. However, things like Cookie Dough Bites are okay to eat raw because they are made with heat-treated flour and pasteurized eggs that kill off any potential pathogens."
+      },
+      {
+        "title": "How Dangerous Is It to Eat Raw Cookie Dough? | Men's Health",
+        "text": "is usually pasteurized, so it\u2019s not likely that the egg would make you sick. However, other ingredients in the dough could potentially harbor pathogens. Experts say that a prime suspect in a 2009 E. coli outbreak linked to prepackaged cookie dough was actually the flour. Nuts and chocolate have also been linked to Salmonella outbreaks. Bottom line: You\u2019re better off skipping raw cookie dough. At least you\u2019ll have killer cookies as a consolation. The article How Bad Is It To Eat Raw Cookie Dough? originally ran on Prevention.com The 9 Foods Most Likely to Make You Sick Mmm, Just Don't",
+        "url": "https://www.menshealth.com/health/a19520261/risks-of-eating-raw-cookie-dough/",
+        "summary": "Raw cookie dough could potentially harbor pathogens, with flour, nuts, and chocolate being linked to outbreaks of E. coli or Salmonella. Pasteurized cookie dough products like Cookie Dough Bites are likely safe to consume.",
+        "extraction": "Raw cookie dough is bad to eat because ingredients in the dough, such as flour, nuts, and chocolate, could potentially harbor pathogens like Salmonella. However, things like Cookie Dough Bites are okay because the dough is usually pasteurized, making it less likely that the egg would make you sick."
+      }
+    ]
+  }
+]

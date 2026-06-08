@@ -433,6 +433,37 @@ def compute_autoais(fname, data,
     }
 
 
+def compute_citation_regex(data, qampari=False):
+    sent_total = 0
+    sent_with_citation = 0
+    sent_with_valid_citation = 0
+    total_citations = 0
+
+    for item in data:
+        if qampari:
+            sents = [item['question'] + " " + x.strip() for x in item['output'].rstrip().rstrip(".").rstrip(",").split(",")]
+        else:
+            sents = sent_tokenize(item['output'])
+
+        for sent in sents:
+            refs = [int(r[1:]) - 1 for r in re.findall(r"\[\d+", sent)]
+            sent_total += 1
+            total_citations += len(refs)
+            if refs:
+                sent_with_citation += 1
+            if refs and all(0 <= ref_id < len(item["docs"]) for ref_id in refs):
+                sent_with_valid_citation += 1
+
+    return {
+        "citation_regex_sentences": sent_total,
+        "citation_regex_cited_sentences": sent_with_citation,
+        "citation_regex_valid_sentences": sent_with_valid_citation,
+        "citation_regex_rec": 100 * sent_with_citation / sent_total if sent_total else 0,
+        "citation_regex_valid_rate": 100 * sent_with_valid_citation / sent_total if sent_total else 0,
+        "citation_regex_avg_citations": total_citations / sent_total if sent_total else 0,
+    }
+
+
 def compute_qampari_f1(data, cot=False):
     prec = []
     rec = []
@@ -484,6 +515,7 @@ def main():
     parser.add_argument("--qa", action="store_true", help="Use the QA model")
     parser.add_argument("--mauve", action="store_true", help="Use the mauve score model")
     parser.add_argument("--citations", action="store_true", help="Evaluation with citation")
+    parser.add_argument("--citation_regex_only", action="store_true", help="Only validate citation presence/ranges without loading the AutoAIS model")
     parser.add_argument("--at_most_citations", type=int, default=3, help="At most take this many documents (mostly for precision)")
     parser.add_argument("--claims_nli", action="store_true", help="Use claims for ELI5")
 
@@ -536,8 +568,11 @@ def main():
         result.update(compute_qa(normalized_data))
     if args.mauve:
         result['mauve'] = compute_mauve(normalized_data)
-    if args.citations: 
-        result.update(compute_autoais(args.f, data, qampari=qampari, at_most_citations=args.at_most_citations))
+    if args.citations:
+        if args.citation_regex_only:
+            result.update(compute_citation_regex(data, qampari=qampari))
+        else:
+            result.update(compute_autoais(args.f, data, qampari=qampari, at_most_citations=args.at_most_citations))
     if args.claims_nli:
         result["claims_nli"] = compute_claims(normalized_data)
 

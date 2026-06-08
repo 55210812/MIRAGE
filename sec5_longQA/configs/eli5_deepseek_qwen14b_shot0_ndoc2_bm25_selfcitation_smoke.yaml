@@ -1,0 +1,13 @@
+---
+prompt_file: prompts/eli5_default_llama2_selfcitation.json
+eval_file: smoke_data/eli5_eval_bm25_top100_smoke.json
+quick_test: 1
+shot: 0
+ndoc: 2
+dataset_name: eli5
+tag: bm25-smoke
+model: /home/intern/models/DeepSeek-R1-Distill-Qwen-14B
+temperature: 0.6
+top_p: 0.95
+do_sample: false
+max_new_tokens: 64

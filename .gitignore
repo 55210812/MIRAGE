@@ -1,0 +1,29 @@
+.env
+.env.*
+!.env.example
+
+# Local environments and caches
+.envs/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+.nltk_data/
+.pip-cache/
+.conda_pkgs/
+
+# Downloaded datasets and archives
+ALCE-data.tar
+sec5_longQA/ALCE-data.tar
+sec5_longQA/data/
+
+# Generated MIRAGE internals and outputs
+sec5_longQA/internal_selfcitation/
+sec5_longQA/internal_standard/
+sec5_longQA/result/
+
+# Models and local Hugging Face caches
+models/
+hf_cache/
+.huggingface/
