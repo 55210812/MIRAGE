@@ -74,6 +74,31 @@ Why is it bad to eat cookie dough for risk of salmonella but things like Cookie 
 - 第二句没有 citation。
 - 这里的 citation 不是模型自己自由生成的，而是 MIRAGE 根据 token attribution 计算出来的。
 
+### 1.3.1 两个 JSON 的区别到底在哪
+
+区别只在 `data[0].output` 字段。两个 JSON 的 `args`、`question`、`docs` 等字段基本相同，所以直接翻完整 JSON 会觉得几乎没变化。
+
+原始 JSON 的 `data[0].output` 是：
+
+```text
+ The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella. [1][2
+```
+
+MIRAGE citation JSON 的 `data[0].output` 是：
+
+```text
+ The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [1] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella.
+```
+
+最小差异可以这样看：
+
+```diff
+- ... can harbor the bacteria. However, the FDA ... E. coli and Salmonella. [1][2
++ ... can harbor the bacteria. [1] However, the FDA ... E. coli and Salmonella.
+```
+
+也就是说，原始生成把不完整 citation `[1][2` 放在整段末尾；MIRAGE 重写后，把合法 citation `[1]` 放到了第一句话后面，并删除了末尾不完整的 citation。
+
 ### 1.4 评估分数怎么看
 
 | 指标 | 当前值 | 怎么理解 |
