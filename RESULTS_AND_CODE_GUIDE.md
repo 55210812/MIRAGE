@@ -7,8 +7,8 @@
 
 同时，本文档把本次 DeepSeek smoke 产生的 4 个关键结果文件内容完整放在后面，便于汇报和归档。
 
-生成时间：2026-06-09  
-远端路径：`/mnt/data2/zyc/mirage`  
+生成时间：2026-06-10
+远端路径：`/mnt/data2/zyc/mirage`
 结果目录：`/mnt/data2/zyc/mirage/sec5_longQA`
 
 ## 1. 结果怎么看
@@ -65,13 +65,13 @@ Why is it bad to eat cookie dough for risk of salmonella but things like Cookie 
 这是 `mirage_cite.py` 根据模型内部 attribution 重新写 citation 后的答案：
 
 ```text
- The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [1] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella.
+ The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [2] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella.
 ```
 
 观察点：
 
-- 第一句被加上 `[1]`。
-- 第二句没有 citation。
+- 第二句被加上 `[2]`，对应 FDA/raw flour 那篇文档。
+- 第一句没有 citation，因为在当前 CTI/CCI 阈值下没有形成非零文档贡献。
 - 这里的 citation 不是模型自己自由生成的，而是 MIRAGE 根据 token attribution 计算出来的。
 
 ### 1.3.1 两个 JSON 的区别到底在哪
@@ -87,17 +87,17 @@ Why is it bad to eat cookie dough for risk of salmonella but things like Cookie 
 MIRAGE citation JSON 的 `data[0].output` 是：
 
 ```text
- The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [1] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella.
+ The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [2] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella.
 ```
 
 最小差异可以这样看：
 
 ```diff
 - ... can harbor the bacteria. However, the FDA ... E. coli and Salmonella. [1][2
-+ ... can harbor the bacteria. [1] However, the FDA ... E. coli and Salmonella.
++ ... can harbor the bacteria. [2] However, the FDA ... E. coli and Salmonella.
 ```
 
-也就是说，原始生成把不完整 citation `[1][2` 放在整段末尾；MIRAGE 重写后，把合法 citation `[1]` 放到了第一句话后面，并删除了末尾不完整的 citation。
+也就是说，原始生成把不完整 citation `[1][2` 放在整段末尾；MIRAGE 重写后，把合法 citation `[2]` 放到了第二句话前面，并删除了末尾不完整的 citation。
 
 ### 1.4 评估分数怎么看
 
@@ -150,6 +150,16 @@ internal_selfcitation/_home_intern_models_deepseek-r1-distill-qwen-14b-shot0-see
   "output_current_tokens_count": 60,
   "cti_scores_count": 60,
   "cci_scores_count": 13,
+  "document_starts_detected_from_tokens": [
+    [
+      0,
+      1
+    ],
+    [
+      139,
+      2
+    ]
+  ],
   "first_20_input_context_tokens": [
     "Document",
     "Ġ[",
@@ -254,6 +264,75 @@ internal_selfcitation/_home_intern_models_deepseek-r1-distill-qwen-14b-shot0-see
 - `cti_scores` 决定哪些答案 token 值得追踪来源。
 - `cci_scores` 决定这些 token 的来源主要落在哪些文档 token 上。
 - `mirage_cite.py` 再把 token 级贡献聚合到文档级 citation。
+
+### 1.6 CTI / CCI 实际展示
+
+`cti_scores` 和 `cci_scores` 就在内部归因 JSON 的顶层字段里：
+
+```text
+internal_selfcitation/_home_intern_models_deepseek-r1-distill-qwen-14b-shot0-seed42-0.json
+```
+
+#### CTI 最高的输出 token
+
+| rank | output token index | output token | CTI score |
+| ---: | ---: | --- | ---: |
+| 1 | 32 | ` warned` | 19.828125 |
+| 2 | 31 | ` recently` | 18.921875 |
+| 3 | 29 | ` FDA` | 9.382812 |
+| 4 | 38 | ` another` | 7.136719 |
+| 5 | 35 | ` raw` | 6.070312 |
+| 6 | 30 | ` has` | 5.339844 |
+| 7 | 45 | ` raw` | 4.246094 |
+| 8 | 41 | ` the` | 4.078125 |
+| 9 | 44 | ` of` | 3.119141 |
+| 10 | 37 | ` for` | 2.921875 |
+| 11 | 26 | ` However` | 2.826172 |
+| 12 | 28 | ` the` | 2.490234 |
+
+#### CCI 非零示例
+
+下面展示的是 CCI 分数非零的输出 token。`doc` 是根据 `input_context_tokens` 中的 `Document [N]` 边界恢复出来的文档编号。
+
+#### CCI 示例 1
+
+输出 token：` raw`，output index：`35`，CTI：`6.070312`
+
+| doc | 聚合 CCI 分数 |
+| ---: | ---: |
+| 1 | 10.933540 |
+| 2 | 25.450555 |
+
+| rank | context token index | doc | context token | CCI score |
+| ---: | ---: | ---: | --- | ---: |
+| 1 | 160 | 2 | `ks` | 1.110133 |
+| 2 | 153 | 2 | `,` | 0.812615 |
+| 3 | 152 | 2 | ` Dough` | 0.720493 |
+| 4 | 221 | 2 | ` of` | 0.646578 |
+| 5 | 270 | 2 | ` as` | 0.628736 |
+| 6 | 151 | 2 | ` Cookie` | 0.566408 |
+| 7 | 150 | 2 | ` Raw` | 0.533712 |
+| 8 | 169 | 2 | ` Dough` | 0.505832 |
+
+#### CCI 示例 2
+
+输出 token：` However`，output index：`26`，CTI：`2.826172`
+
+| doc | 聚合 CCI 分数 |
+| ---: | ---: |
+| 1 | 3.681652 |
+| 2 | 6.546582 |
+
+| rank | context token index | doc | context token | CCI score |
+| ---: | ---: | ---: | --- | ---: |
+| 1 | 160 | 2 | `ks` | 0.285098 |
+| 2 | 169 | 2 | ` Dough` | 0.209318 |
+| 3 | 270 | 2 | ` as` | 0.202926 |
+| 4 | 152 | 2 | ` Dough` | 0.184481 |
+| 5 | 153 | 2 | `,` | 0.171950 |
+| 6 | 158 | 2 | `ella` | 0.142956 |
+| 7 | 151 | 2 | ` Cookie` | 0.132123 |
+| 8 | 168 | 2 | ` Cookie` | 0.130327 |
 
 ## 2. 代码怎么看
 
@@ -533,7 +612,7 @@ https://github.com/55210812/MIRAGE/blob/main/CODE_WALKTHROUGH.md
                 }
             ],
             "prompt": "Instruction: Write an accurate, engaging, and concise answer for the given question using only the provided search results (some of which might be irrelevant) and cite them properly. Use an unbiased and journalistic tone. Always cite for any factual claim. When citing several search results, use [1][2][3]. Cite at least one document and at most three documents in each sentence. If multiple documents support the sentence, only cite a minimum sufficient subset of the documents.\n\nQuestion: Why is it bad to eat cookie dough for risk of salmonella but things like Cookie Dough Bites are ok?\n\nDocument [1](Title: How to Treat and Prevent Food Poisoning - MsPrepper): just a typical gastro upset. Salmonella is most commonly caused by eating undercooked or raw foods like eggs or meat. You know how your mom always warned you not to eat raw cookie dough? This is why. Most people do eat cookie dough and they are fine, but salmonella is a risk. If you do contract salmonella, you could start to feel bad within in a couple of hours after eating contaminated food, and sometimes it could take a day or two. Common symptoms are nausea and vomiting, loose stools (sometimes bloody), flu like symptoms, and stomach cramps. To treat\nDocument [2](Title: FDA Issues Warning About Eating Raw Cookie Dough, But Not For Salmonella Risks): FDA Issues Warning About Eating Raw Cookie Dough, But Not For Salmonella Risks Used to licking the spoon or placating yourself with full-on chunks of raw cookie dough? The Food and Drug Administration issued a warning on Tuesday that strongly advises against continuing the habit. The agency asserted that consuming raw batter of any kind, whether for bread, cookies or pizza, could make a person sick. While you may have been warned in the past against eating raw dough due to the risk of contracting salmonella from raw eggs, the FDA is citing raw flour as the culprit for a\n\nAnswer:",
-            "output": " The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [1] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella."
+            "output": " The risk of salmonella from eating raw cookie dough is primarily due to the presence of raw eggs, which can harbor the bacteria. [2] However, the FDA has recently warned against consuming raw dough for another reason: the potential contamination of raw flour with harmful bacteria, such as E. coli and Salmonella."
         }
     ]
 }

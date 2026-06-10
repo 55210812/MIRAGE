@@ -7,7 +7,10 @@ import torch
 import copy
 
 import nltk
-nltk.download('punkt')
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 from nltk import sent_tokenize
 import numpy as np

@@ -917,7 +917,7 @@ cti_threshold = mean(cti_scores) + CTI * std(cti_scores)
 
 位置：`sec5_longQA/mirage_cite.py:125-129`
 
-`input_context_tokens` 中的 `<0x0A>` 被视为文档分隔符。后面会按这些分隔符把上下文 token contribution 汇总成每篇文档的分数。
+`input_context_tokens` 中的换行 token 被视为文档分隔符。不同 tokenizer 会把换行编码成不同 token，例如 Llama 常见 `<0x0A>`，DeepSeek/Qwen 这次结果里是 `Ċ`。代码会同时识别 `<0x0A>`、`Ċ` 和普通 `\n`，后面再按这些分隔符把上下文 token contribution 汇总成每篇文档的分数。
 
 ### 9.10 对每个句子生成引用
 

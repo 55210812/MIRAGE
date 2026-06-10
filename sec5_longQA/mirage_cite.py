@@ -122,10 +122,10 @@ def main():
             sents = [item['question'] + ' ' + x.strip() for x in item['output'].rstrip(".").split(",")]
         else:
             sents = sent_tokenize(output)
-        # check num and index of '\n' (i.e. <0x0A> in Llama, zephyr, mistral)
-        # num should constantly be 5
+        # Check newline/document separator tokens. Different tokenizers encode
+        # '\n' differently, e.g. <0x0A> for Llama and Ċ for Qwen/DeepSeek.
         doc_seps = np.array(res_mirage["input_context_tokens"])
-        doc_seps = doc_seps == '<0x0A>'
+        doc_seps = np.isin(doc_seps, ['<0x0A>', 'Ċ', '\n'])
         #num_doc = pd.value_counts(res_mirage["input_context_tokens"])["<0x0A>"]
         
         new_output = ""
