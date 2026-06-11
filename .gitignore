@@ -22,6 +22,7 @@ sec5_longQA/data/
 sec5_longQA/internal_selfcitation/
 sec5_longQA/internal_standard/
 sec5_longQA/result/
+runs/
 
 # Models and local Hugging Face caches
 models/
