@@ -259,6 +259,8 @@ def split_sentences(text: str, min_chars: int) -> List[str]:
 
 def trim_chars(text: str, max_chars: int) -> str:
     text = re.sub(r"\s+", " ", text).strip()
+    if max_chars <= 0:
+        return text
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rstrip() + "..."
@@ -1006,7 +1008,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-cti-fallback", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--manifest-only", action="store_true")
     parser.add_argument("--tfidf-doc-chars", type=int, default=5000)
-    parser.add_argument("--cti-doc-chars", type=int, default=600)
+    parser.add_argument("--cti-doc-chars", type=int, default=0)
     parser.add_argument("--perturb-doc-chars", type=int, default=3500)
     parser.add_argument("--max-input-tokens", type=int, default=4096)
     parser.add_argument("--max-new-tokens", type=int, default=64)

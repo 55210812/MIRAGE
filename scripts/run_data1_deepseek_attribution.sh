@@ -52,7 +52,7 @@ echo "started_at=$(date -Is)" > "$RUN_DIR/.running"
 echo "[data1] started_at=$(date -Is)"
 echo "[data1] python=$PYTHON"
 echo "[data1] run_dir=$RUN_DIR"
-echo "[data1] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} cti_method=${CTI_METHOD:-saliency} cti_doc_chars=${CTI_DOC_CHARS:-600}"
+echo "[data1] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} cti_method=${CTI_METHOD:-saliency} cti_doc_chars=${CTI_DOC_CHARS:-0}"
 
 "$PYTHON" "$ROOT_DIR/sec5_longQA/data1_deepseek_attribution.py" \
   --data-root "${DATA1_ROOT:-$ROOT_DIR/data_1}" \
@@ -61,7 +61,7 @@ echo "[data1] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} cti_
   --workdir-limit "${WORKDIR_LIMIT:-1}" \
   --doc-limit "${DOC_LIMIT:-100}" \
   --cti-context-docs "${CTI_CONTEXT_DOCS:-5}" \
-  --cti-doc-chars "${CTI_DOC_CHARS:-600}" \
+  --cti-doc-chars "${CTI_DOC_CHARS:-0}" \
   --cti-method "${CTI_METHOD:-saliency}" \
   --top-sensitive-sentences "${TOP_SENSITIVE_SENTENCES:-100}" \
   --paragraph-doc-topk "${PARAGRAPH_DOC_TOPK:-3}" \

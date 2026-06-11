@@ -32,7 +32,7 @@ WORKDIR_LIMIT=27 bash scripts/run_data1_deepseek_attribution.sh
 
 1. 扫描 `data_1`：读取每个 `history_report/历史成果.txt`，选择时间戳最新的 `search-results-*`，按 `资料N.txt` 的 N 排序取前 100 篇。
 2. 切分 answer：按中英文句末标点和换行切句，得到待归因句子。
-3. 句子级 CTI：先用字符 n-gram TF-IDF 从前 100 篇资料中为每个句子检索 Top5，构造紧凑上下文；每篇 CTI 上下文资料默认截断到 600 字，避免 14B saliency 在长上下文上卡住。默认尝试 DeepSeek + inseq saliency 得到 token CTI。若单句 saliency 异常，会降级为 DeepSeek logprob 差分并在该行 `cti_method` 标明。
+3. 句子级 CTI：先用字符 n-gram TF-IDF 从前 100 篇资料中为每个句子检索 Top5，构造不截断的上下文。默认尝试 DeepSeek + inseq saliency 得到 token CTI。若单句 saliency 异常，会降级为 DeepSeek logprob 差分并在该行 `cti_method` 标明。
 4. 文档级扰动：对 Top100 敏感句逐篇计算 `avg_logprob(sentence | question + doc_j) - avg_logprob(sentence | question_only)`，delta 越高，表示该资料越能支持该句。
 5. 段落级扰动：对每句 Top3 文档逐段移除，计算 `avg_logprob(sentence | full_doc) - avg_logprob(sentence | full_doc_without_paragraph_k)`，importance 越高，表示该段越关键。
 6. 长跑管理：watchdog 用 `flock` 防重复，用 tmux session `mirage-data1-deepseek` 跑主任务；`.done` 或 `.failed` 存在时不重复启动。
