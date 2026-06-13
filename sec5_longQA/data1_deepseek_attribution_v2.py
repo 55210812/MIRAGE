@@ -209,6 +209,32 @@ def rank_chunks(
     return [(chunks[int(i)], float(scores[int(i)])) for i in order]
 
 
+def is_answer_content_sentence(sentence: str) -> bool:
+    text = sentence.strip()
+    if not text:
+        return False
+    if text.startswith("#"):
+        return False
+    if re.match(r"^\d+[.、]\s*\*\*[^*]{1,80}\*\*\s*[:：]?$", text):
+        return False
+    if re.match(r"^\d+[.、]\s*[^。！？.!?]{1,40}\s*[:：]$", text):
+        return False
+    if text.endswith((":", "：")) and len(normalize_for_validation(text)) < 80:
+        return False
+    return True
+
+
+def split_answer_content_sentences(text: str, min_chars: int) -> Tuple[List[str], List[Dict[str, Any]]]:
+    kept: List[str] = []
+    skipped: List[Dict[str, Any]] = []
+    for raw_id, sentence in enumerate(v1.split_sentences(text, min_chars)):
+        if is_answer_content_sentence(sentence):
+            kept.append(sentence)
+        else:
+            skipped.append({"raw_sentence_id": raw_id, "sentence": sentence})
+    return kept, skipped
+
+
 def format_chunk_for_generation(chunk: EvidenceChunk, max_chars: int) -> str:
     return (
         f"[资料{chunk.doc_number}/chunk{chunk.chunk_id}] {chunk.doc_title}\n"
@@ -721,6 +747,12 @@ def build_summary(output_dir: Path, manifest: Sequence[Dict[str, Any]]) -> None:
     failed_records = v1.read_jsonl(output_dir / "cti_failed.jsonl")
     doc_records = v1.read_jsonl(output_dir / "doc_perturbation.jsonl")
     para_records = v1.read_jsonl(output_dir / "paragraph_perturbation.jsonl")
+    skipped_count = 0
+    for skipped_path in (output_dir / "embedding_debug").glob("*/skipped_answer_sentences.json"):
+        try:
+            skipped_count += int(json.loads(skipped_path.read_text(encoding="utf-8")).get("skipped_count", 0))
+        except Exception:
+            continue
     docs_by_sentence = {(r.get("workdir_alias"), r.get("sentence_id")): r for r in doc_records}
     paras_by_sentence_doc = {
         (r.get("workdir_alias"), r.get("sentence_id"), r.get("doc_id")): r for r in para_records
@@ -734,6 +766,7 @@ def build_summary(output_dir: Path, manifest: Sequence[Dict[str, Any]]) -> None:
         f"- 已处理 workdir：{', '.join(selected_workdirs) if selected_workdirs else '无'}",
         f"- sentence_cti 成功行数：{len(sentence_records)}",
         f"- cti_failed 行数：{len(failed_records)}",
+        f"- 跳过结构句数：{skipped_count}",
         f"- doc_perturbation 行数：{len(doc_records)}",
         f"- paragraph_perturbation 行数：{len(para_records)}",
         "",
@@ -898,11 +931,15 @@ def main() -> None:
         if args.generate_only:
             continue
 
-        sentences = [
-            sentence
-            for sentence in v1.split_sentences(generated_text, args.min_sentence_chars)
-            if not sentence.lstrip().startswith("#")
-        ]
+        sentences, skipped_sentences = split_answer_content_sentences(generated_text, args.min_sentence_chars)
+        v1.write_json(
+            output_dir / "embedding_debug" / alias / "skipped_answer_sentences.json",
+            {
+                "workdir_alias": alias,
+                "skipped_count": len(skipped_sentences),
+                "skipped": skipped_sentences,
+            },
+        )
         if not sentences:
             raise RuntimeError(f"{alias} generated history has no valid sentences")
 

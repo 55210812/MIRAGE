@@ -31,6 +31,7 @@ bash scripts/data1_deepseek_v2_stop.sh
 - 用 `BAAI/bge-m3` 做中英文语义 embedding 检索，替换字符 TF-IDF。
 - 用 DeepSeek 14B 基于 workdir 资料生成对应主题的中文 `历史成果.txt` 副本。
 - manifest 记录原始 history 的 MD5/标题/重复数，以及 generated history 的路径、标题、MD5、标题-主题相似度。
+- CTI 前过滤非事实性结构句，包括 Markdown 标题、编号加粗小标题和短冒号承接句；跳过清单写入 `embedding_debug/<alias>/skipped_answer_sentences.json`。
 - `sentence_cti.jsonl` 只写入 `inseq_saliency` 成功句；失败句写入 `cti_failed.jsonl`，不参与 Top100 和后续 citation。
 - 段落扰动按 Markdown/标题分节，并在节内每 5 句组成一个 chunk，不再把整篇资料当作单段。
 - DeepSeek-R1 生成报告时使用 no-think 预填，并且报告生成只用 EOS stop token，避免标题换行处被旧 attribution stop token 截断。
@@ -43,6 +44,7 @@ bash scripts/data1_deepseek_v2_stop.sh
 - `manifest.json`
 - `embedding_debug/workdir-1/generation_chunks.json`
 - `embedding_debug/workdir-1/sentence_contexts.json`
+- `embedding_debug/workdir-1/skipped_answer_sentences.json`
 - `sentence_cti.jsonl`
 - `cti_failed.jsonl`
 - `doc_perturbation.jsonl`
@@ -55,4 +57,4 @@ bash scripts/data1_deepseek_v2_stop.sh
 - `generated_history/workdir-1/历史成果.txt` 应以 `## “星链”系统在俄乌冲突中的军事作用与暴露的问题` 开头，正文围绕星链、俄乌冲突、军事通信、无人机、指挥控制和暴露问题。
 - `manifest.json` 中 `validation_errors` 应为空，`title_topic_similarity` 应明显高于阈值。
 - `internal_cti/workdir-1/sentence-*.json` 中 `record.cti_method` 必须是 `inseq_saliency`。
-- `sentence_cti.jsonl` 只在全部有效句 CTI 完成后重写；运行中先看 `internal_cti/` 文件数和 status heartbeat。
+- `sentence_cti.jsonl` 只在全部有效内容句 CTI 完成后重写；运行中先看 `internal_cti/` 文件数和 status heartbeat。
