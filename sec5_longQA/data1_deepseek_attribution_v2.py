@@ -53,6 +53,16 @@ class EvidenceChunk:
         return title
 
 
+@dataclass
+class SentenceItem:
+    sentence_id: int
+    raw_sentence_id: int
+    sentence: str
+    answer_prefix_before: str
+    answer_prefix_chars: int
+    answer_prefix_excerpt: str
+
+
 class BgeEmbedder:
     def __init__(
         self,
@@ -224,14 +234,42 @@ def is_answer_content_sentence(sentence: str) -> bool:
     return True
 
 
-def split_answer_content_sentences(text: str, min_chars: int) -> Tuple[List[str], List[Dict[str, Any]]]:
-    kept: List[str] = []
+def suffix_excerpt(text: str, max_chars: int) -> str:
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    return "..." + text[-max_chars:]
+
+
+def split_answer_content_items(
+    text: str,
+    min_chars: int,
+    excerpt_chars: int,
+) -> Tuple[List[SentenceItem], List[Dict[str, Any]]]:
+    kept: List[SentenceItem] = []
     skipped: List[Dict[str, Any]] = []
+    cursor = 0
     for raw_id, sentence in enumerate(v1.split_sentences(text, min_chars)):
+        start = text.find(sentence, cursor)
+        if start < 0:
+            start = text.find(sentence)
+        if start < 0:
+            start = cursor
+        answer_prefix = text[:start]
         if is_answer_content_sentence(sentence):
-            kept.append(sentence)
+            kept.append(
+                SentenceItem(
+                    sentence_id=len(kept),
+                    raw_sentence_id=raw_id,
+                    sentence=sentence,
+                    answer_prefix_before=answer_prefix,
+                    answer_prefix_chars=len(answer_prefix),
+                    answer_prefix_excerpt=suffix_excerpt(answer_prefix, excerpt_chars),
+                )
+            )
         else:
             skipped.append({"raw_sentence_id": raw_id, "sentence": sentence})
+        cursor = max(cursor, start + len(sentence))
     return kept, skipped
 
 
@@ -464,6 +502,140 @@ def write_sentence_context_debug(
     v1.write_json(output_dir / "embedding_debug" / alias / "sentence_contexts.json", rows)
 
 
+def escape_template_text(text: str) -> str:
+    return text.replace("{", "{{").replace("}", "}}")
+
+
+def answer_prefix_md5(answer_prefix: str) -> str:
+    return md5_text(answer_prefix)
+
+
+def build_answer_only_prefix(question: str, answer_prefix: str) -> str:
+    return f"问题：{question}\n答案：{answer_prefix}"
+
+
+def build_doc_answer_prefix(question: str, doc: v1.Doc, max_doc_chars: int, answer_prefix: str) -> str:
+    return f"问题：{question}\n\n参考资料：\n{v1.format_doc_for_prompt(doc, max_doc_chars)}\n答案：{answer_prefix}"
+
+
+def build_compact_context_answer_prefix(
+    question: str,
+    docs: Sequence[v1.Doc],
+    max_doc_chars: int,
+    answer_prefix: str,
+) -> str:
+    docs_text = "\n".join(v1.format_doc_for_prompt(doc, max_doc_chars) for doc in docs)
+    return f"问题：{question}\n\n参考资料：\n{docs_text}\n答案：{answer_prefix}"
+
+
+def compute_cti_sentence_logprob(
+    model: torch.nn.Module,
+    tokenizer: Any,
+    question: str,
+    sentence: str,
+    answer_prefix: str,
+    prompt_docs: Sequence[v1.Doc],
+    max_doc_chars: int,
+    max_input_tokens: int,
+) -> Dict[str, Any]:
+    contextless_avg, _, _ = v1.score_sentence(
+        model,
+        tokenizer,
+        build_answer_only_prefix(question, answer_prefix),
+        sentence,
+        max_input_tokens,
+    )
+    context_avg, _, _ = v1.score_sentence(
+        model,
+        tokenizer,
+        build_compact_context_answer_prefix(question, prompt_docs, max_doc_chars, answer_prefix),
+        sentence,
+        max_input_tokens,
+    )
+    sentence_cti = context_avg - contextless_avg
+    return {
+        "cti_method": "sentence_logprob_delta_with_answer_prefix",
+        "cti_mode": "sentence_logprob",
+        "output_current_tokens": [],
+        "cti_scores": [],
+        "cci_scores": [],
+        "input_context_tokens": [],
+        "sentence_cti": v1.finite_float(sentence_cti),
+        "context_avg_logprob": v1.finite_float(context_avg),
+        "contextless_avg_logprob": v1.finite_float(contextless_avg),
+        "selected_context_docs": [doc.doc_id for doc in prompt_docs],
+    }
+
+
+def compute_cti_saliency_with_answer_prefix(
+    model: torch.nn.Module,
+    tokenizer: Any,
+    model_mirage: Any,
+    model_path: str,
+    question: str,
+    sentence: str,
+    answer_prefix: str,
+    prompt_docs: Sequence[v1.Doc],
+    max_doc_chars: int,
+    max_new_tokens: int,
+    cache_path: Path,
+) -> Dict[str, Any]:
+    if getattr(v1, "inseq", None) is None or getattr(v1, "AttributeContextArgs", None) is None:
+        raise RuntimeError("inseq is not available")
+
+    escaped_prefix = escape_template_text(answer_prefix)
+    input_context_text = "\n".join(v1.format_doc_for_prompt(doc, max_doc_chars) for doc in prompt_docs)
+    input_template = "问题：{current}\n\n参考资料：\n{context}\n\n答案：" + escaped_prefix
+    contextless_input_current_text = "问题：{current}\n答案：" + escaped_prefix
+    raw_save_path = str(cache_path.with_suffix(".inseq.json"))
+    args = v1.AttributeContextArgs(
+        model_name_or_path=model_path,
+        input_context_text=input_context_text,
+        input_current_text=question,
+        output_template="{current}",
+        input_template=input_template,
+        contextless_input_current_text=contextless_input_current_text,
+        show_intermediate_outputs=False,
+        attributed_fn="contrast_prob_diff",
+        context_sensitivity_std_threshold=0,
+        output_current_text=sentence,
+        attribution_method="saliency",
+        attribution_kwargs={"logprob": True},
+        save_path=raw_save_path,
+        tokenizer_kwargs={"use_fast": False},
+        model_kwargs={
+            "device_map": "auto",
+            "torch_dtype": torch.float16,
+            "max_memory": v1.get_max_memory(),
+            "load_in_8bit": False,
+        },
+        generation_kwargs={
+            "do_sample": False,
+            "max_new_tokens": max_new_tokens,
+            "num_return_sequences": 1,
+            "eos_token_id": v1.stop_token_ids(tokenizer, model, model_path),
+        },
+        decoder_input_output_separator=v1.inseq_decoder_separator(model_path),
+        special_tokens_to_keep=[],
+        show_viz=False,
+    )
+    v1.attribute_context_with_model(args, model_mirage)
+    payload = json.loads(Path(raw_save_path).read_text(encoding="utf-8"))
+    cti_scores = [float(x) for x in payload.get("cti_scores", [])]
+    sentence_cti = float(np.mean(cti_scores)) if cti_scores else 0.0
+    return {
+        "cti_method": "inseq_saliency",
+        "cti_mode": "token_saliency",
+        "output_current_tokens": payload.get("output_current_tokens", []),
+        "cti_scores": [v1.finite_float(x) for x in cti_scores],
+        "cci_scores": payload.get("cci_scores", []),
+        "input_context_tokens": payload.get("input_context_tokens", []),
+        "sentence_cti": v1.finite_float(sentence_cti),
+        "selected_context_docs": [doc.doc_id for doc in prompt_docs],
+        "raw_inseq_path": raw_save_path,
+    }
+
+
 def compute_or_record_strict_cti(
     args: argparse.Namespace,
     output_dir: Path,
@@ -471,38 +643,60 @@ def compute_or_record_strict_cti(
     tokenizer: Any,
     model_mirage: Any,
     entry: Dict[str, Any],
-    sentence_id: int,
-    sentence: str,
+    item: SentenceItem,
     ranked_chunks: Sequence[Tuple[EvidenceChunk, float]],
 ) -> Optional[Dict[str, Any]]:
     alias = entry["alias"]
+    sentence_id = item.sentence_id
+    sentence = item.sentence
     cache_path = v1.cti_cache_path(output_dir, alias, sentence_id)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cached = v1.load_cti_from_cache(cache_path)
-    if cached and cached.get("cti_method") == "inseq_saliency":
+    if (
+        cached
+        and cached.get("cti_mode") == args.cti_mode
+        and cached.get("answer_prefix_md5") == answer_prefix_md5(item.answer_prefix_before)
+    ):
         return cached
 
     prompt_docs = [chunk_to_prompt_doc(chunk, idx) for idx, (chunk, _) in enumerate(ranked_chunks, start=1)]
     try:
-        cti = v1.compute_cti_saliency(
-            model,
-            tokenizer,
-            model_mirage,
-            args.model,
-            entry["question"],
-            sentence,
-            prompt_docs,
-            args.cti_doc_chars,
-            args.max_new_tokens,
-            cache_path,
-        )
+        if args.cti_mode == "token_saliency":
+            cti = compute_cti_saliency_with_answer_prefix(
+                model,
+                tokenizer,
+                model_mirage,
+                args.model,
+                entry["question"],
+                sentence,
+                item.answer_prefix_before,
+                prompt_docs,
+                args.cti_doc_chars,
+                args.max_new_tokens,
+                cache_path,
+            )
+        else:
+            cti = compute_cti_sentence_logprob(
+                model,
+                tokenizer,
+                entry["question"],
+                sentence,
+                item.answer_prefix_before,
+                prompt_docs,
+                args.cti_doc_chars,
+                args.max_input_tokens,
+            )
     except Exception as exc:
         failure = {
             "workdir_alias": alias,
             "workdir_name": entry["original_name"],
             "question": entry["question"],
             "sentence_id": sentence_id,
+            "raw_sentence_id": item.raw_sentence_id,
             "sentence": sentence,
+            "cti_mode": args.cti_mode,
+            "answer_prefix_chars": item.answer_prefix_chars,
+            "answer_prefix_excerpt": item.answer_prefix_excerpt,
             "selected_context_chunks": [
                 {
                     "rank": idx,
@@ -536,7 +730,12 @@ def compute_or_record_strict_cti(
     ]
     record = {
         "sentence_id": sentence_id,
+        "raw_sentence_id": item.raw_sentence_id,
         "sentence": sentence,
+        "answer_prefix_before": item.answer_prefix_before,
+        "answer_prefix_chars": item.answer_prefix_chars,
+        "answer_prefix_excerpt": item.answer_prefix_excerpt,
+        "answer_prefix_md5": answer_prefix_md5(item.answer_prefix_before),
         **cti,
     }
     v1.write_json(cache_path, {"record": record})
@@ -547,7 +746,7 @@ def compute_sentence_cti_records_strict(
     args: argparse.Namespace,
     output_dir: Path,
     entry: Dict[str, Any],
-    sentences: Sequence[str],
+    sentence_items: Sequence[SentenceItem],
     sentence_contexts: Dict[int, List[Tuple[EvidenceChunk, float]]],
     model: torch.nn.Module,
     tokenizer: Any,
@@ -561,6 +760,7 @@ def compute_sentence_cti_records_strict(
             int(r.get("sentence_id", -1))
             for r in v1.read_jsonl(failed_path)
             if r.get("workdir_alias") == alias
+            and r.get("cti_mode") == args.cti_mode
         }
     else:
         failed_ids = set()
@@ -570,7 +770,9 @@ def compute_sentence_cti_records_strict(
                 for record in kept:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    for sentence_id, sentence in enumerate(tqdm(sentences, desc=f"{alias} strict CTI")):
+    for item in tqdm(sentence_items, desc=f"{alias} {args.cti_mode} CTI"):
+        sentence_id = item.sentence_id
+        sentence = item.sentence
         if sentence_id in failed_ids:
             continue
         update_heartbeat(
@@ -578,7 +780,8 @@ def compute_sentence_cti_records_strict(
             phase="sentence_cti",
             workdir_alias=alias,
             sentence_id=sentence_id,
-            sentence_count=len(sentences),
+            sentence_count=len(sentence_items),
+            cti_mode=args.cti_mode,
         )
         ranked_chunks = sentence_contexts[sentence_id]
         cti = compute_or_record_strict_cti(
@@ -588,8 +791,7 @@ def compute_sentence_cti_records_strict(
             tokenizer,
             model_mirage,
             entry,
-            sentence_id,
-            sentence,
+            item,
             ranked_chunks,
         )
         if cti is None:
@@ -599,21 +801,30 @@ def compute_sentence_cti_records_strict(
             "workdir_name": entry["original_name"],
             "question": entry["question"],
             "sentence_id": sentence_id,
+            "raw_sentence_id": item.raw_sentence_id,
             "sentence": sentence,
+            "answer_prefix_before": item.answer_prefix_before,
+            "answer_prefix_chars": item.answer_prefix_chars,
+            "answer_prefix_excerpt": item.answer_prefix_excerpt,
+            "answer_prefix_md5": answer_prefix_md5(item.answer_prefix_before),
             "selected_context_docs": cti.get("selected_context_docs", []),
             "selected_context_chunks": cti.get("selected_context_chunks", []),
             "cti_method": cti.get("cti_method"),
+            "cti_mode": cti.get("cti_mode", args.cti_mode),
             "output_current_tokens": cti.get("output_current_tokens", []),
             "cti_scores": cti.get("cti_scores", []),
             "sentence_cti": cti.get("sentence_cti"),
+            "context_avg_logprob": cti.get("context_avg_logprob"),
+            "contextless_avg_logprob": cti.get("contextless_avg_logprob"),
             "cci_scores": cti.get("cci_scores", []),
             "input_context_tokens": cti.get("input_context_tokens", []),
-            "raw_inseq_path": cti.get("raw_inseq_path"),
         }
+        if cti.get("raw_inseq_path"):
+            record["raw_inseq_path"] = cti["raw_inseq_path"]
         success_records.append(record)
 
     if not success_records:
-        raise RuntimeError(f"{alias} has no successful inseq_saliency CTI records")
+        raise RuntimeError(f"{alias} has no successful {args.cti_mode} CTI records")
     ranked = v1.rank_sentence_records(success_records, min(args.top_sensitive_sentences, len(success_records)))
     v1.rewrite_jsonl_replace_alias(output_dir / "sentence_cti.jsonl", alias, ranked)
     return ranked
@@ -628,6 +839,103 @@ def split_doc_chunks_for_perturbation(
     for idx, chunk in enumerate(chunks, start=1):
         chunk.chunk_id = idx
     return chunks
+
+
+def done_doc_keys(path: Path) -> set:
+    return {
+        (r.get("workdir_alias"), int(r.get("sentence_id", -1)))
+        for r in v1.read_jsonl(path)
+        if "sentence_id" in r
+    }
+
+
+def compute_doc_perturbation_with_answer_prefix(
+    args: argparse.Namespace,
+    output_dir: Path,
+    entry: Dict[str, Any],
+    docs: Sequence[v1.Doc],
+    sentence_records: Sequence[Dict[str, Any]],
+    model: torch.nn.Module,
+    tokenizer: Any,
+) -> None:
+    alias = entry["alias"]
+    out_path = output_dir / "doc_perturbation.jsonl"
+    completed = done_doc_keys(out_path)
+    targets = sorted(
+        [r for r in sentence_records if r.get("is_top100")],
+        key=lambda r: r.get("sensitivity_rank", 10**9),
+    )
+    for record in tqdm(targets, desc=f"{alias} doc perturbation"):
+        sentence_id = int(record["sentence_id"])
+        if (alias, sentence_id) in completed:
+            continue
+        sentence = record["sentence"]
+        answer_prefix = record.get("answer_prefix_before", "")
+        update_heartbeat(
+            output_dir,
+            phase="doc_perturbation",
+            workdir_alias=alias,
+            sentence_id=sentence_id,
+            sentence_count=len(targets),
+        )
+        base_avg, _, _ = v1.score_sentence(
+            model,
+            tokenizer,
+            build_answer_only_prefix(entry["question"], answer_prefix),
+            sentence,
+            args.max_input_tokens,
+        )
+        doc_scores = []
+        for doc in docs:
+            avg_logprob, _, _ = v1.score_sentence(
+                model,
+                tokenizer,
+                build_doc_answer_prefix(entry["question"], doc, args.perturb_doc_chars, answer_prefix),
+                sentence,
+                args.max_input_tokens,
+            )
+            delta = avg_logprob - base_avg
+            doc_scores.append(
+                {
+                    "doc_id": doc.doc_id,
+                    "doc_number": doc.number,
+                    "title": doc.title,
+                    "path": doc.path,
+                    "avg_logprob": v1.finite_float(avg_logprob),
+                    "delta_vs_contextless_with_answer_prefix": v1.finite_float(delta),
+                    "delta_vs_question_only": v1.finite_float(delta),
+                }
+            )
+        doc_scores.sort(
+            key=lambda r: r["delta_vs_contextless_with_answer_prefix"]
+            if r["delta_vs_contextless_with_answer_prefix"] is not None
+            else -10**9,
+            reverse=True,
+        )
+        for rank, doc_score in enumerate(doc_scores, start=1):
+            doc_score["rank"] = rank
+        v1.append_jsonl(
+            out_path,
+            {
+                "workdir_alias": alias,
+                "workdir_name": entry["original_name"],
+                "question": entry["question"],
+                "sentence_id": sentence_id,
+                "raw_sentence_id": record.get("raw_sentence_id"),
+                "sensitivity_rank": record.get("sensitivity_rank"),
+                "sentence_cti": record.get("sentence_cti"),
+                "cti_mode": record.get("cti_mode"),
+                "cti_method": record.get("cti_method"),
+                "sentence": sentence,
+                "answer_prefix_before": answer_prefix,
+                "answer_prefix_chars": record.get("answer_prefix_chars", len(answer_prefix)),
+                "answer_prefix_excerpt": record.get("answer_prefix_excerpt", suffix_excerpt(answer_prefix, args.summary_excerpt_chars)),
+                "base_avg_logprob": v1.finite_float(base_avg),
+                "doc_scores": doc_scores,
+                "top_docs": doc_scores[: args.paragraph_doc_topk],
+            },
+        )
+        completed.add((alias, sentence_id))
 
 
 def remove_one_chunk(chunks: Sequence[EvidenceChunk], remove_idx: int) -> str:
@@ -659,6 +967,7 @@ def compute_paragraph_perturbation_chunks(
     for record in tqdm(doc_records, desc=f"{alias} chunk perturbation"):
         sentence_id = int(record["sentence_id"])
         sentence = record["sentence"]
+        answer_prefix = record.get("answer_prefix_before", "")
         for doc_rank, doc_meta in enumerate(record.get("top_docs", [])[: args.paragraph_doc_topk], start=1):
             doc_id = int(doc_meta["doc_id"])
             if (alias, sentence_id, doc_id) in completed:
@@ -679,7 +988,7 @@ def compute_paragraph_perturbation_chunks(
                 full_avg, _, _ = v1.score_sentence(
                     model,
                     tokenizer,
-                    v1.build_doc_prefix(entry["question"], doc, args.perturb_doc_chars),
+                    build_doc_answer_prefix(entry["question"], doc, args.perturb_doc_chars, answer_prefix),
                     sentence,
                     args.max_input_tokens,
                 )
@@ -696,7 +1005,7 @@ def compute_paragraph_perturbation_chunks(
                 without_avg, _, _ = v1.score_sentence(
                     model,
                     tokenizer,
-                    v1.build_doc_prefix(entry["question"], ablated_doc, args.perturb_doc_chars),
+                    build_doc_answer_prefix(entry["question"], ablated_doc, args.perturb_doc_chars, answer_prefix),
                     sentence,
                     args.max_input_tokens,
                 )
@@ -728,7 +1037,13 @@ def compute_paragraph_perturbation_chunks(
                     "workdir_name": entry["original_name"],
                     "question": entry["question"],
                     "sentence_id": sentence_id,
+                    "raw_sentence_id": record.get("raw_sentence_id"),
                     "sentence": sentence,
+                    "answer_prefix_before": answer_prefix,
+                    "answer_prefix_chars": record.get("answer_prefix_chars", len(answer_prefix)),
+                    "answer_prefix_excerpt": record.get("answer_prefix_excerpt", suffix_excerpt(answer_prefix, args.summary_excerpt_chars)),
+                    "cti_mode": record.get("cti_mode"),
+                    "cti_method": record.get("cti_method"),
                     "doc_rank": doc_rank,
                     "doc_id": doc.doc_id,
                     "doc_number": doc.number,
@@ -758,12 +1073,14 @@ def build_summary(output_dir: Path, manifest: Sequence[Dict[str, Any]]) -> None:
         (r.get("workdir_alias"), r.get("sentence_id"), r.get("doc_id")): r for r in para_records
     }
     selected_workdirs = sorted({r.get("workdir_alias") for r in sentence_records})
+    cti_modes = sorted({str(r.get("cti_mode") or r.get("cti_method")) for r in sentence_records})
     lines = [
         "# data_1 DeepSeek MIRAGE v2 严格归因摘要",
         "",
         f"- 更新时间：{v1.now_ts()}",
         f"- manifest workdir 数：{len(manifest)}",
         f"- 已处理 workdir：{', '.join(selected_workdirs) if selected_workdirs else '无'}",
+        f"- CTI 模式：{', '.join(cti_modes) if cti_modes else '无'}",
         f"- sentence_cti 成功行数：{len(sentence_records)}",
         f"- cti_failed 行数：{len(failed_records)}",
         f"- 跳过结构句数：{skipped_count}",
@@ -779,6 +1096,7 @@ def build_summary(output_dir: Path, manifest: Sequence[Dict[str, Any]]) -> None:
         lines.append(f"### {alias} / sentence-{int(sentence_id):04d} / rank {record.get('sensitivity_rank')}")
         lines.append("")
         lines.append(f"- CTI：{record.get('sentence_cti')}")
+        lines.append(f"- 答案前文长度：{record.get('answer_prefix_chars')}")
         lines.append(f"- 句子：{record.get('sentence')}")
         lines.append("- CTI 语义上下文：")
         for chunk in record.get("selected_context_chunks", [])[:5]:
@@ -811,9 +1129,12 @@ def build_summary(output_dir: Path, manifest: Sequence[Dict[str, Any]]) -> None:
 
 def validate_outputs(output_dir: Path) -> None:
     v1.validate_outputs(output_dir)
+    valid_methods = {"inseq_saliency", "sentence_logprob_delta_with_answer_prefix"}
     for record in v1.read_jsonl(output_dir / "sentence_cti.jsonl"):
-        if record.get("cti_method") != "inseq_saliency":
-            raise RuntimeError("non-saliency CTI record found in sentence_cti.jsonl")
+        if record.get("cti_method") not in valid_methods:
+            raise RuntimeError("unknown CTI record found in sentence_cti.jsonl")
+        if "answer_prefix_chars" not in record:
+            raise RuntimeError("answer_prefix_chars missing from sentence_cti.jsonl")
 
 
 def parse_args() -> argparse.Namespace:
@@ -838,6 +1159,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-sensitive-sentences", type=int, default=100)
     parser.add_argument("--paragraph-doc-topk", type=int, default=3)
     parser.add_argument("--paragraph-chunk-sentences", type=int, default=5)
+    parser.add_argument("--cti-mode", choices=["token_saliency", "sentence_logprob"], default="token_saliency")
+    parser.add_argument("--sentence-limit", type=int, default=0, help="Smoke-test limit; 0 keeps all content sentences.")
     parser.add_argument("--cti-method", choices=["saliency"], default="saliency")
     parser.add_argument("--manifest-only", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -870,6 +1193,8 @@ def main() -> None:
         raise RuntimeError("no runnable data_1 workdir found")
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for DeepSeek attribution")
+    if args.cti_mode == "sentence_logprob":
+        args.cti_method = "sentence_logprob"
 
     update_heartbeat(output_dir, phase="load_embedding", model=args.embedding_model)
     embedder = BgeEmbedder(
@@ -931,7 +1256,13 @@ def main() -> None:
         if args.generate_only:
             continue
 
-        sentences, skipped_sentences = split_answer_content_sentences(generated_text, args.min_sentence_chars)
+        sentence_items, skipped_sentences = split_answer_content_items(
+            generated_text,
+            args.min_sentence_chars,
+            args.summary_excerpt_chars,
+        )
+        if args.sentence_limit > 0:
+            sentence_items = sentence_items[: args.sentence_limit]
         v1.write_json(
             output_dir / "embedding_debug" / alias / "skipped_answer_sentences.json",
             {
@@ -940,18 +1271,18 @@ def main() -> None:
                 "skipped": skipped_sentences,
             },
         )
-        if not sentences:
+        if not sentence_items:
             raise RuntimeError(f"{alias} generated history has no valid sentences")
 
         sentence_contexts = {
-            sentence_id: rank_chunks(
+            item.sentence_id: rank_chunks(
                 embedder,
                 chunk_embeddings,
                 chunks,
-                sentence,
+                item.sentence,
                 args.cti_context_docs,
             )
-            for sentence_id, sentence in enumerate(sentences)
+            for item in sentence_items
         }
         write_sentence_context_debug(output_dir, alias, sentence_contexts)
 
@@ -959,13 +1290,13 @@ def main() -> None:
             args,
             output_dir,
             entry,
-            sentences,
+            sentence_items,
             sentence_contexts,
             model,
             tokenizer,
             model_mirage,
         )
-        v1.compute_doc_perturbation(args, output_dir, entry, docs, sentence_records, model, tokenizer)
+        compute_doc_perturbation_with_answer_prefix(args, output_dir, entry, docs, sentence_records, model, tokenizer)
         compute_paragraph_perturbation_chunks(
             args,
             output_dir,

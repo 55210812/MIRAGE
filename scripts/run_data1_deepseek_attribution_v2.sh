@@ -94,7 +94,7 @@ echo "started_at=$(date -Is)" > "$RUN_DIR/.running"
 echo "[data1-v2] started_at=$(date -Is)"
 echo "[data1-v2] python=$PYTHON"
 echo "[data1-v2] run_dir=$RUN_DIR"
-echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} embedding=$EMBEDDING_MODEL_RESOLVED"
+echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} embedding=$EMBEDDING_MODEL_RESOLVED cti_mode=${CTI_MODE:-token_saliency}"
 
 "$PYTHON" "$ROOT_DIR/sec5_longQA/data1_deepseek_attribution_v2.py" \
   --data-root "${DATA1_ROOT:-$ROOT_DIR/data_1}" \
@@ -105,6 +105,7 @@ echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} e
   --workdir-limit "${WORKDIR_LIMIT:-1}" \
   --doc-limit "${DOC_LIMIT:-100}" \
   --cti-context-docs "${CTI_CONTEXT_DOCS:-5}" \
+  --cti-mode "${CTI_MODE:-token_saliency}" \
   --top-sensitive-sentences "${TOP_SENSITIVE_SENTENCES:-100}" \
   --paragraph-doc-topk "${PARAGRAPH_DOC_TOPK:-3}" \
   --no-think-prefill \
