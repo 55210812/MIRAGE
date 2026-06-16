@@ -94,7 +94,7 @@ echo "started_at=$(date -Is)" > "$RUN_DIR/.running"
 echo "[data1-v2] started_at=$(date -Is)"
 echo "[data1-v2] python=$PYTHON"
 echo "[data1-v2] run_dir=$RUN_DIR"
-echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} embedding=$EMBEDDING_MODEL_RESOLVED cti_mode=${CTI_MODE:-token_saliency}"
+echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} embedding=$EMBEDDING_MODEL_RESOLVED cti_mode=${CTI_MODE:-token_saliency} history_source=${HISTORY_SOURCE:-model_generate}"
 
 "$PYTHON" "$ROOT_DIR/sec5_longQA/data1_deepseek_attribution_v2.py" \
   --data-root "${DATA1_ROOT:-$ROOT_DIR/data_1}" \
@@ -106,8 +106,12 @@ echo "[data1-v2] workdir_limit=${WORKDIR_LIMIT:-1} doc_limit=${DOC_LIMIT:-100} e
   --doc-limit "${DOC_LIMIT:-100}" \
   --cti-context-docs "${CTI_CONTEXT_DOCS:-5}" \
   --cti-mode "${CTI_MODE:-token_saliency}" \
+  --history-source "${HISTORY_SOURCE:-model_generate}" \
+  --history-file-name "${HISTORY_FILE_NAME:-md_report.txt}" \
   --top-sensitive-sentences "${TOP_SENSITIVE_SENTENCES:-100}" \
+  --top-sensitive-percent "${TOP_SENSITIVE_PERCENT:-0}" \
   --paragraph-doc-topk "${PARAGRAPH_DOC_TOPK:-3}" \
+  --top-doc-percent "${TOP_DOC_PERCENT:-0}" \
   --no-think-prefill \
   "$@"
 

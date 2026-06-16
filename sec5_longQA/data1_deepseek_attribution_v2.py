@@ -528,6 +528,32 @@ def build_compact_context_answer_prefix(
     return f"问题：{question}\n\n参考资料：\n{docs_text}\n答案：{answer_prefix}"
 
 
+def resolve_top_count(total: int, absolute: int, percent: float) -> int:
+    if total <= 0:
+        return 0
+    if percent > 0:
+        ratio = percent / 100.0 if percent > 1 else percent
+        ratio = min(max(ratio, 0.0), 1.0)
+        return max(1, min(total, math.ceil(total * ratio)))
+    return max(1, min(total, absolute))
+
+
+def load_md_report_history(entry: Dict[str, Any], history_file_name: str) -> Tuple[Path, str]:
+    history_path = entry.get("history_path")
+    if not history_path:
+        raise RuntimeError(f"{entry['alias']} has no history_path in manifest")
+    source_path = Path(history_path).parent / history_file_name
+    if not source_path.exists():
+        raise RuntimeError(f"{entry['alias']} missing md report file: {source_path}")
+    text = v1.read_text(source_path)
+    if not text.strip():
+        raise RuntimeError(f"{entry['alias']} md report file is empty: {source_path}")
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if not first_line.startswith("## "):
+        raise RuntimeError(f"{entry['alias']} md report must start with a report heading: {source_path}")
+    return source_path, text
+
+
 def compute_cti_sentence_logprob(
     model: torch.nn.Module,
     tokenizer: Any,
@@ -825,7 +851,12 @@ def compute_sentence_cti_records_strict(
 
     if not success_records:
         raise RuntimeError(f"{alias} has no successful {args.cti_mode} CTI records")
-    ranked = v1.rank_sentence_records(success_records, min(args.top_sensitive_sentences, len(success_records)))
+    top_count = resolve_top_count(
+        len(success_records),
+        args.top_sensitive_sentences,
+        args.top_sensitive_percent,
+    )
+    ranked = v1.rank_sentence_records(success_records, top_count)
     v1.rewrite_jsonl_replace_alias(output_dir / "sentence_cti.jsonl", alias, ranked)
     return ranked
 
@@ -914,6 +945,11 @@ def compute_doc_perturbation_with_answer_prefix(
         )
         for rank, doc_score in enumerate(doc_scores, start=1):
             doc_score["rank"] = rank
+        top_doc_count = resolve_top_count(
+            len(doc_scores),
+            args.paragraph_doc_topk,
+            args.top_doc_percent,
+        )
         v1.append_jsonl(
             out_path,
             {
@@ -931,8 +967,9 @@ def compute_doc_perturbation_with_answer_prefix(
                 "answer_prefix_chars": record.get("answer_prefix_chars", len(answer_prefix)),
                 "answer_prefix_excerpt": record.get("answer_prefix_excerpt", suffix_excerpt(answer_prefix, args.summary_excerpt_chars)),
                 "base_avg_logprob": v1.finite_float(base_avg),
+                "top_doc_count": top_doc_count,
                 "doc_scores": doc_scores,
-                "top_docs": doc_scores[: args.paragraph_doc_topk],
+                "top_docs": doc_scores[:top_doc_count],
             },
         )
         completed.add((alias, sentence_id))
@@ -968,7 +1005,7 @@ def compute_paragraph_perturbation_chunks(
         sentence_id = int(record["sentence_id"])
         sentence = record["sentence"]
         answer_prefix = record.get("answer_prefix_before", "")
-        for doc_rank, doc_meta in enumerate(record.get("top_docs", [])[: args.paragraph_doc_topk], start=1):
+        for doc_rank, doc_meta in enumerate(record.get("top_docs", []), start=1):
             doc_id = int(doc_meta["doc_id"])
             if (alias, sentence_id, doc_id) in completed:
                 continue
@@ -1157,10 +1194,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--title-similarity-threshold", type=float, default=0.35)
     parser.add_argument("--cti-context-docs", type=int, default=5)
     parser.add_argument("--top-sensitive-sentences", type=int, default=100)
+    parser.add_argument("--top-sensitive-percent", type=float, default=0.0)
     parser.add_argument("--paragraph-doc-topk", type=int, default=3)
+    parser.add_argument("--top-doc-percent", type=float, default=0.0)
     parser.add_argument("--paragraph-chunk-sentences", type=int, default=5)
     parser.add_argument("--cti-mode", choices=["token_saliency", "sentence_logprob"], default="token_saliency")
     parser.add_argument("--sentence-limit", type=int, default=0, help="Smoke-test limit; 0 keeps all content sentences.")
+    parser.add_argument("--history-source", choices=["model_generate", "md_report"], default="model_generate")
+    parser.add_argument("--history-file-name", default="md_report.txt")
     parser.add_argument("--cti-method", choices=["saliency"], default="saliency")
     parser.add_argument("--manifest-only", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -1230,13 +1271,22 @@ def main() -> None:
         write_generation_debug(output_dir, alias, entry["question"], generation_chunks)
 
         generated_path = output_dir / "generated_history" / alias / "历史成果.txt"
-        if args.force_generate_history or not generated_path.exists():
+        source_history_path = ""
+        if args.history_source == "md_report":
+            update_heartbeat(output_dir, phase="load_md_report", workdir_alias=alias)
+            source_path, generated_text = load_md_report_history(entry, args.history_file_name)
+            generated_path.parent.mkdir(parents=True, exist_ok=True)
+            generated_path.write_text(generated_text, encoding="utf-8")
+            source_history_path = str(source_path)
+        elif args.force_generate_history or not generated_path.exists():
             update_heartbeat(output_dir, phase="generate_history", workdir_alias=alias)
             generated_text = generate_history(model, tokenizer, entry["question"], generation_chunks, args)
             generated_path.parent.mkdir(parents=True, exist_ok=True)
             generated_path.write_text(generated_text, encoding="utf-8")
+            source_history_path = str(generated_path)
         else:
             generated_text = v1.read_text(generated_path)
+            source_history_path = str(generated_path)
 
         validation = validate_generated_history(
             entry,
@@ -1246,6 +1296,9 @@ def main() -> None:
         )
         generated_manifest_entry = {
             "alias": alias,
+            "history_source": args.history_source,
+            "history_file_name": args.history_file_name,
+            "source_history_path": source_history_path,
             "generated_history_path": str(generated_path),
             **validation,
         }

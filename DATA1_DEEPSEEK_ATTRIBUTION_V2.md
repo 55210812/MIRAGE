@@ -19,6 +19,22 @@ cd /mnt/data2/zyc/mirage
 CTI_MODE=sentence_logprob FORCE_RERUN=1 bash scripts/data1_deepseek_v2_watchdog.sh
 ```
 
+默认答案来源是模型生成。若要直接使用每个 workdir 的 `history_report/md_report.txt` 作为答案：
+
+```bash
+cd /mnt/data2/zyc/mirage
+HISTORY_SOURCE=md_report HISTORY_FILE_NAME=md_report.txt CTI_MODE=sentence_logprob DOC_LIMIT=100 RUN_DIR=$PWD/runs/data1-deepseek-mirage-v2-md-report-doc100-test bash scripts/run_data1_deepseek_attribution_v2.sh
+```
+
+若要跑 `md_report` 的 top10% 句子与 top10% 文档实验，并交给 tmux/watchdog/crontab 管控：
+
+```bash
+cd /mnt/data2/zyc/mirage
+bash scripts/install_data1_deepseek_v2_md_report_top10_cron.sh
+bash scripts/data1_deepseek_v2_md_report_top10_watchdog.sh
+RUN_DIR=$PWD/runs/data1-deepseek-mirage-v2-md-report-top10 SESSION=mirage-md-report-top10 bash scripts/data1_deepseek_v2_status.sh
+```
+
 快速 smoke 可在 runner 后追加 Python 参数，例如 `--sentence-limit 1 --top-sensitive-sentences 1 --paragraph-doc-topk 1`；默认 `--sentence-limit 0`，正式运行仍处理全部内容句。
 
 安装 crontab watchdog：
@@ -39,11 +55,13 @@ bash scripts/data1_deepseek_v2_stop.sh
 
 - 用 `BAAI/bge-m3` 做中英文语义 embedding 检索，替换字符 TF-IDF。
 - 用 DeepSeek 14B 基于 workdir 资料生成对应主题的中文 `历史成果.txt` 副本。
+- `--history-source model_generate|md_report` 控制答案来源；默认 `model_generate` 保持原模型生成逻辑，`md_report` 读取 `history_report/md_report.txt` 并复制到 run 目录的 `generated_history/<alias>/历史成果.txt`。
 - manifest 记录原始 history 的 MD5/标题/重复数，以及 generated history 的路径、标题、MD5、标题-主题相似度。
 - CTI 前过滤非事实性结构句，包括 Markdown 标题、编号加粗小标题和短冒号承接句；跳过清单写入 `embedding_debug/<alias>/skipped_answer_sentences.json`。
 - 每个内容句保留目标句之前的原始答案前文，上下文字段写入 `answer_prefix_chars`、`answer_prefix_excerpt` 和 `answer_prefix_before`。
 - `--cti-mode token_saliency` 保留 inseq token CTI，输出 `cti_scores/cci_scores`，并用聚合后的 `sentence_cti` 排序。
 - `--cti-mode sentence_logprob` 新增句子级 CTI，用 `question + Top5 资料块 + 答案前文` 对比 `question + 答案前文` 的整句 logprob delta。
+- `--top-sensitive-percent` 和 `--top-doc-percent` 支持按比例选择敏感句和进入段落归因的文档；值可写 `0.10` 或 `10`，都表示 10%。
 - `sentence_cti.jsonl` 只写入成功句；失败句写入 `cti_failed.jsonl`，不参与 Top100 和后续 citation。
 - 文档级和段落级扰动都保留答案前文上下文；文档级新增 `delta_vs_contextless_with_answer_prefix`，并暂时同步写旧字段 `delta_vs_question_only`。
 - 段落扰动按 Markdown/标题分节，并在节内每 5 句组成一个 chunk，不再把整篇资料当作单段。
@@ -69,6 +87,7 @@ bash scripts/data1_deepseek_v2_stop.sh
 - `manifest.json` 中 27 个原始 history 会被标记为同一 MD5；`workdir-1` 的原始标题是“生成式人工智能在美军指挥控制领域的发展现状”。
 - `generated_history/workdir-1/历史成果.txt` 应以 `## “星链”系统在俄乌冲突中的军事作用与暴露的问题` 开头，正文围绕星链、俄乌冲突、军事通信、无人机、指挥控制和暴露问题。
 - `manifest.json` 中 `validation_errors` 应为空，`title_topic_similarity` 应明显高于阈值。
+- `md_report` 模式下，`manifest.json` 中 `history_source` 应为 `md_report`，`source_history_path` 应指向 `history_report/md_report.txt`。
 - token 模式下，`internal_cti/workdir-1/sentence-*.json` 中 `record.cti_method` 必须是 `inseq_saliency`。
 - sentence 模式下，`sentence_cti.jsonl` 中 `cti_method` 必须是 `sentence_logprob_delta_with_answer_prefix`，且每条有 `context_avg_logprob/contextless_avg_logprob`。
 - 两种模式下，每条 `sentence_cti.jsonl` 都必须包含 `answer_prefix_chars` 和 `answer_prefix_excerpt`。
